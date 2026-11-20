@@ -8,12 +8,9 @@ The provided configuration writes:
 ```text
 checkpoints/
 `-- vhe_net_with/
-    |-- best_model.pt
     `-- last_model.pt
 ```
 
-`best_model.pt` is selected on validation Spearman correlation and is the
-recommended checkpoint for prediction. `last_model.pt` is the final epoch.
 
 ## Rebuilding the checkpoints
 
