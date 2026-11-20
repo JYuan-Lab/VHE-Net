@@ -37,7 +37,6 @@ VHE-Net/
 |   |-- metrics.py
 |   |-- model.py
 |   `-- preprocessing.py
-|-- .gitignore
 |-- LICENSE
 |-- README.md
 |-- predict.py
