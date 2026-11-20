@@ -161,8 +161,6 @@ If you use VHE-Net, please cite:
 > Ecologically informed deep learning for viral host prediction and proactive
 > spillover surveillance (under review).
 
-Machine-readable citation metadata is provided in `CITATION.cff`.
-
 ## Contact
 
 Correspondence: <yuan_jiao@gzlab.ac.cn>
