@@ -119,13 +119,13 @@ confirm that this GPU is available before starting.
 
 ## 3. Export and check predictions
 
-After training, export predictions with `best_model.pt` (or `last_model.pt` for
+After training, export predictions with `last_model.pt` (or `best_model.pt` for
 the final epoch):
 
 ```bash
 python predict.py \
   --config configs/vhe_net_with_weight.yaml \
-  --checkpoint checkpoints/vhe_net_with/best_model.pt \
+  --checkpoint checkpoints/vhe_net_with/last_model.pt \
   --out outputs/with/predictions.csv
 ```
 
