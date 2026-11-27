@@ -19,7 +19,7 @@ for p in (PROJECT_ROOT, TEST_DIR):
         sys.path.insert(0, str(p))
 
 from vhenet.preprocessing import process_interaction_data, load_config
-from vhenet.dataset import FullWindowIdsHistPosData
+from vhenet.dataset import PairTableData
 from vhenet.model import ViHGAT_814v6, SelfAttnPoolMoE
 
 
@@ -27,10 +27,17 @@ def resolve(p, base=PROJECT_ROOT):
     p = Path(p).expanduser(); return p if p.is_absolute() else (base / p)
 
 
-def main(config_path, ckpt_path, out_prefix, split_by_virus=None, cls_cache="cache/cls_windows_cache_934.pt"):
+def main(config_path, ckpt_path, out_prefix, split_by_virus=None, cls_cache=None):
     cfg = load_config(config_path); device = torch.device(cfg["device"]); seed = cfg.get("seed", 42)
-    if str(device).startswith("cuda") and device.index is not None and device.index >= torch.cuda.device_count():
-        print(f"[warning] device={cfg['device']} is out of range; falling back to cuda:0", flush=True); device = torch.device("cuda:0")
+    if str(device).startswith("cuda"):
+        if torch.cuda.device_count() == 0:
+            print("[warning] no CUDA device is visible; running on CPU", flush=True)
+            device = torch.device("cpu")
+        elif device.index is not None and device.index >= torch.cuda.device_count():
+            print(f"[warning] device={cfg['device']} is out of range; falling back to cuda:0", flush=True)
+            device = torch.device("cuda:0")
+    if cls_cache is None:
+        cls_cache = cfg["data"]["cls_cache"]
     if split_by_virus is not None:
         cfg["data"]["split_by_virus"] = split_by_virus
     df, host_to_id, sim_matrix = process_interaction_data(
@@ -52,8 +59,8 @@ def main(config_path, ckpt_path, out_prefix, split_by_virus=None, cls_cache="cac
     print(f"split_by_virus={_by_virus} (pairwise={not _by_virus})")
     train_df = df.iloc[tr_idx].reset_index(drop=True)
     val_df = df.iloc[va_idx].reset_index(drop=True)
-    train_data = FullWindowIdsHistPosData(train_df, host_to_id, str(resolve(cfg["data"]["ids_cache_dir"])))
-    val_data = FullWindowIdsHistPosData(val_df, host_to_id, str(resolve(cfg["data"]["ids_cache_dir"])))
+    train_data = PairTableData(train_df, host_to_id)
+    val_data = PairTableData(val_df, host_to_id)
     print(f"train viruses={train_df['Virus'].nunique()}, val viruses={val_df['Virus'].nunique()}")
 
     mc = cfg["model"]
@@ -125,8 +132,8 @@ def main(config_path, ckpt_path, out_prefix, split_by_virus=None, cls_cache="cac
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/vhe_net_with_weight.yaml")
-    ap.add_argument("--cls-cache", default="cache/cls_windows_cache_934.pt",
-                    help="path to the precomputed window CLS cache")
+    ap.add_argument("--cls-cache", default=None,
+                    help="path to the precomputed window CLS cache; defaults to data.cls_cache")
     ap.add_argument("--checkpoint", default="checkpoints/vhe_net_with/last_model.pt")
     ap.add_argument("--out", default="outputs/predictions.csv")
     ap.add_argument("--split-by-virus", dest="split_by_virus", type=int, default=None,
