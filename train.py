@@ -10,10 +10,12 @@ Loss terms:
   * ``entropy_lambda``: per-head entropy, permitting sparse focus
   * ``bal_lambda``: pairwise head-overlap penalty, which discourages duplicate
     or inactive heads without forcing attention to be uniform over windows
-  * optional attention-sensitivity alignment and 3' region priors
+  * ``align_lambda``: attention-sensitivity alignment, with the per-window
+    sensitivity profile recomputed from the current model at every step
+  * optional 3' region priors
 
-Importance weights are fixed (positive 20 / negative 4.5) with a 10:1 split by
-virus. Run from the repository root:
+Row weights are read from the ``importance score`` column and clipped to
+``[imp_lower, imp_upper]``. Run from the repository root:
 
     python train.py --config configs/vhe_net_with_weight.yaml
 """
@@ -41,7 +43,7 @@ for p in (PROJECT_ROOT, TEST_DIR):
         sys.path.insert(0, str(p))
 
 from vhenet.preprocessing import process_interaction_data, load_config, parse_fasta  # noqa: E402
-from vhenet.dataset import FullWindowIdsHistPosData  # noqa: E402
+from vhenet.dataset import PairTableData  # noqa: E402
 from vhenet.losses import per_virus_softmax_loss, weighted_bce  # noqa: E402
 from vhenet.metrics import ranking_metrics  # noqa: E402
 from vhenet.model import ViHGAT_814v6, SelfAttnPoolMoE, sparsemax  # noqa: E402
@@ -197,26 +199,10 @@ def main(config_path):
         train_idx, val_idx = next(splitter.split(df))
     train_df = df.iloc[train_idx].reset_index(drop=True)
     val_df = df.iloc[val_idx].reset_index(drop=True)
-    train_data = FullWindowIdsHistPosData(
-        train_df, host_to_id, str(resolve(cfg["data"]["ids_cache_dir"])))
-    val_data = FullWindowIdsHistPosData(
-        val_df, host_to_id, str(resolve(cfg["data"]["ids_cache_dir"])))
-    cls_windows = torch.load(
-        resolve("cache/cls_windows_cache_934.pt"), map_location="cpu")
-    print(f"window CLS cache (934): {len(cls_windows)}")
-
-    true_dp = {}
-    _tml = str(cfg["training"].get("true_label_manifest", ""))
-    if _tml:
-        import json as _json
-        man = _json.load(open(resolve(_tml)))
-        for v, p in man.items():
-            try:
-                d = _json.load(open(p))
-                true_dp[v] = torch.tensor(np.abs(d["dp_top1"]), dtype=torch.float32)
-            except Exception as e:
-                print(f"  [true label skip] {v}: {e}")
-        print(f"shuffle-label reference loaded for {len(true_dp)} viruses")
+    train_data = PairTableData(train_df, host_to_id)
+    val_data = PairTableData(val_df, host_to_id)
+    cls_windows = torch.load(resolve(cfg["data"]["cls_cache"]), map_location="cpu")
+    print(f"window CLS cache: {len(cls_windows)} viruses")
 
     model_cfg = cfg["model"]
     model = ViHGAT_814v6(
@@ -290,7 +276,6 @@ def main(config_path):
     align_lambda = opt_cfg.get("align_lambda", 0.0)  # Attention-sensitivity alignment.
     align_mode = str(opt_cfg.get("align_mode", "pearson"))  # pearson | coverage | both
     coverage_topk = int(opt_cfg.get("coverage_topk", 0))   # 0=soft coverage, >0=hard top-k
-    true_label_manifest = str(opt_cfg.get("true_label_manifest", ""))  # Shuffle-label reference.
     region_prior_lambda = opt_cfg.get("region_prior_lambda", 0.0)
     region_prior_frac = float(opt_cfg.get("region_prior_frac", 0.85))
     viruses_per_epoch = int(opt_cfg.get("viruses_per_epoch", 200))
@@ -402,10 +387,7 @@ def main(config_path):
                 # Summed attention across heads.
                 a_sum = attn.sum(0)
             if align_lambda > 0:
-                if virus in true_dp and true_dp[virus].numel() == attn.shape[-1]:
-                    s = true_dp[virus].to(device)
-                else:
-                    s = drop_sensitivity_moe(win_proj, host_rep, model, moe)
+                s = drop_sensitivity_moe(win_proj, host_rep, model, moe)
                 if align_mode == "coverage":
                     align_loss = coverage_loss(a_sum, s, topk=coverage_topk)
                 elif align_mode == "both":
