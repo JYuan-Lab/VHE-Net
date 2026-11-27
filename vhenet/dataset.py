@@ -73,6 +73,14 @@ class _BaseInteractionData:
         return hosts, labels, weights
 
 
+class PairTableData(_BaseInteractionData):
+    """Virus-host pairs only.
+
+    The released model scores a virus once from its pooled ``[CLS]`` window
+    features, so no per-virus token-id cache is needed here.
+    """
+
+
 class FullWindowInteractionData(_BaseInteractionData):
     """v1: pooled full-window features from the LucaVirus cache."""
 
